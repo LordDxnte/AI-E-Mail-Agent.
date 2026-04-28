@@ -1,0 +1,202 @@
+import os
+
+
+import imaplib
+
+
+import email
+
+
+from langchain_google_genai import ChatGoogleGenerativeAI
+
+
+from email.header import decode_header
+
+
+import requests
+
+
+from crewai import Agent, Task, Crew
+
+
+from langchain_openai import ChatOpenAI
+
+
+
+# ==========================================
+
+
+# 1. YOUR KEYS & CREDENTIALS
+
+
+# ==========================================
+
+
+os.environ["GEMINI_API_KEY"] = "AIzaSyByYZCmN6Ue6KFruZSDxUmrPnYC9SgaaQY"
+
+WEBHOOK_URL = "https://discord.com/api/webhooks/1498054308661297222/RwH5Nk2SYnwNMvEI68KnsRZhlJZmjVDI-KkDqCpiuI4xf-YeR9CmJhNuYhcJu9UIeU2p"
+
+
+
+# Gmail Credentials
+
+
+EMAIL_ACCOUNT = "lorddxnte603@gmail.com"
+
+
+APP_PASSWORD = "viah paqh psph fuqj"  # No spaces!
+
+
+
+# ==========================================
+
+
+# 2. THE EYES (Fetching Unread Gmail)
+
+
+# ==========================================
+
+
+print("Connecting to Gmail...")
+
+
+mail = imaplib.IMAP4_SSL('imap.gmail.com')
+
+
+mail.login(EMAIL_ACCOUNT, APP_PASSWORD)
+
+
+mail.select('inbox')
+
+
+
+# Search for strictly UNREAD emails
+
+
+status, messages = mail.search(None, 'UNSEEN')
+
+
+email_ids = messages[0].split()
+
+
+
+unread_data = []
+
+
+
+# Grab the 10 most recent unread emails
+
+
+for e_id in email_ids[-10:]:
+
+
+    res, msg_data = mail.fetch(e_id, '(RFC822)')
+
+
+    for response_part in msg_data:
+
+
+        if isinstance(response_part, tuple):
+
+
+            msg = email.message_from_bytes(response_part[1])
+            
+
+
+            # Safely decode the subject line
+
+
+            subject, encoding = decode_header(msg["Subject"])[0]
+
+
+            if isinstance(subject, bytes):
+
+
+                subject = subject.decode(encoding if encoding else "utf-8")
+            
+
+
+            sender = msg.get("From")
+
+
+            unread_data.append(f"From: {sender}\nSubject: {subject}")
+
+
+
+if not unread_data:
+
+
+    raw_text = "No new emails today."
+
+
+else:
+
+
+    raw_text = "\n---\n".join(unread_data)
+
+
+
+print(f"Found {len(unread_data)} unread emails. Handing over to AI...")
+
+
+
+
+
+sort_emails = Task(
+
+
+    description=f"Review these unread emails:\n\n{raw_text}\n\nCategorize them into 'Action Required (Humans/Urgent)', 'Newsletters/Updates', and 'Promotional Spam'. Keep descriptions very brief.",
+
+
+    expected_output='A clean markdown list organizing the emails.',
+
+
+    agent=sorter_agent
+
+
+)
+
+
+my_crew = Crew(agents=[sorter_agent], tasks=[sort_emails])
+
+
+organized_inbox = my_crew.kickoff()
+
+
+
+# ==========================================
+
+
+# 4. THE MOUTH (Sending to Discord)
+
+
+# ==========================================
+
+
+print("Sending morning brief to Discord...")
+
+
+data = {
+
+
+    "content": f"**=== YOUR DAILY INBOX BRIEF ===**\n{organized_inbox}"
+
+
+}
+
+
+
+response = requests.post(WEBHOOK_URL, json=data)
+
+
+
+if response.status_code == 204:
+
+
+    print("✅ SUCCESS: Daily brief delivered!")
+
+
+else:
+
+
+    print(f"❌ ERROR: Failed to send to Discord. Code: {response.status_code}")
